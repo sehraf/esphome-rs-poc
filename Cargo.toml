@@ -4,11 +4,11 @@ version = "0.0.3"
 authors = ["sehraf"]
 edition = "2021"
 categories = ["embedded", "hardware-support", "network-programming"]
-keywords = ["embedded", "idf", "esp-idf", "esp32c3", "esphome"]
+keywords = ["embedded", "idf", "esp-idf", "esp32c3", "esphome", "async", "smol"]
 description = "A proof-of-concept rust implementation of the esphome api"
-# repository = "https://github.com/ivmarkov/rust-esp32-std-hello"
+repository = "https://github.com/sehraf/esphome-rs-poc"
 license = "MIT"
-# readme = "README.md"
+readme = "README.md"
 
 [patch.crates-io]
 smol = { git = "https://github.com/esp-rs-compat/smol" }
