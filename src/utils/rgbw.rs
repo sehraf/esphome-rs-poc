@@ -57,7 +57,7 @@ impl From<(f32, f32, f32)> for Rgbw {
             green: rgb.1,
             blue: rgb.2,
             has_rgb: true,
-            white: 0f32,
+            white: 0.,
             has_white: false,
         }
     }
@@ -79,9 +79,9 @@ impl From<(f32, f32, f32, f32)> for Rgbw {
 impl From<f32> for Rgbw {
     fn from(w: f32) -> Self {
         Rgbw {
-            red: 0f32,
-            green: 0f32,
-            blue: 0f32,
+            red: 0.,
+            green: 0.,
+            blue: 0.,
             has_rgb: false,
             white: w,
             has_white: true,

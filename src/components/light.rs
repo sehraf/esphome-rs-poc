@@ -19,41 +19,21 @@ pub struct Light<PINR, PING, PINB> {
     pin_rgb: Option<(PINR, PING, PINB)>,
 }
 
-// impl<C: HwChannel, H: HwTimer, T: Borrow<Timer<H>>, P: OutputPin> embedded_hal_0_2::PwmPin
-//     for Channel<C, H, T, P>
-
-// impl<E, H, T, PINR, PING, PINB> Light<PINR, PING, PINB>
 impl<PINR, PING, PINB> Light<PINR, PING, PINB>
 where
-    // PR: OutputPin<Error = E>,
-    // PG: OutputPin<Error = E>,
-    // PB: OutputPin<Error = E>,
-    // PINR: Channel<CR, H, T, PR>,
-    // PING: Channel<CG, H, T, PG>,
-    // PINB: Channel<CB, H, T, PB>,
-    // E: std::fmt::Debug,
-    // H: HwTimer,
-    // T: Borrow<Timer<H>>,
     PINR: PwmPin,
     PING: PwmPin,
     PINB: PwmPin,
 {
     pub fn new(pins: (PINR, PING, PINB)) -> Light<PINR, PING, PINB> {
-        //! Create a 25 kHz PWM signal with 75 % duty cycle on GPIO 1
-        //! ```
-        //!
-        //! let max_duty = channel.get_max_duty()?;
-        //! channel.set_duty(max_duty * 3 / 4);
-
         Light {
             key: name_to_hash(NAME),
             state: false,
 
-            rgbw: (1f32, 1f32, 1f32).into(),
-            brightness: 1f32,
+            rgbw: (1., 1., 1.).into(),
+            brightness: 1.,
 
             pin_rgb: Some(pins),
-            // pin_w: None,
         }
     }
 
@@ -83,11 +63,6 @@ fn set_pwm(pin: &mut impl PwmPin<Duty = u32>, brightness: f32) {
 
 impl<PINR, PING, PINB> Component for Light<PINR, PING, PINB>
 where
-    // PINR: OutputPin<Error = E>,
-    // PING: OutputPin<Error = E>,
-    // PINB: OutputPin<Error = E>,
-    // // PINW: OutputPin<Error = EspError>,
-    // E: std::fmt::Debug,
     PINR: PwmPin<Duty = u32>,
     PING: PwmPin<Duty = u32>,
     PINB: PwmPin<Duty = u32>,
@@ -133,28 +108,16 @@ where
 
                 // set new values
                 if self.state {
+                    // scale
                     let rgbw = self.rgbw.scale(self.brightness);
                     if let Some(pins) = &mut self.pin_rgb {
-                        // XXX no PWM for now
-                        // pins.0
-                        //     .set_state((rgbw.red() > 0.5).into())
-                        //     .expect("failed to set pin");
-                        // pins.1
-                        //     .set_state((rgbw.green() > 0.5).into())
-                        //     .expect("failed to set pin");
-                        // pins.2
-                        //     .set_state((rgbw.blue() > 0.5).into())
-                        //     .expect("failed to set pin");
                         set_pwm(&mut pins.0, rgbw.red());
                         set_pwm(&mut pins.1, rgbw.green());
                         set_pwm(&mut pins.2, rgbw.blue());
                     }
                 } else {
+                    // turn off
                     if let Some(pins) = &mut self.pin_rgb {
-                        // pins.0.set_low().expect("failed to set pin");
-                        // pins.1.set_low().expect("failed to set pin");
-                        // pins.2.set_low().expect("failed to set pin");
-                        set_pwm(&mut pins.0, 0.);
                         set_pwm(&mut pins.1, 0.);
                         set_pwm(&mut pins.2, 0.);
                     }

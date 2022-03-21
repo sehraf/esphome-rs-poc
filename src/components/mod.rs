@@ -1,11 +1,13 @@
 #[allow(unused_imports)]
 use log::*;
 use std::net::TcpStream;
-#[allow(unused_imports)]
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use esp_idf_hal::prelude::*;
-use esp_idf_hal::{i2c, ledc::{Channel, config::TimerConfig, Timer}};
+use esp_idf_hal::{
+    i2c,
+    ledc::{config::TimerConfig, Channel, Timer},
+};
 
 use protobuf::Message;
 
@@ -167,11 +169,13 @@ impl ComponentManager {
 
         let config = TimerConfig::default().frequency(25.kHz().into());
         let timer = Arc::new(Timer::new(p.ledc.timer0, &config).expect("failed to setup timer"));
-        let channel_r = Channel::new(p.ledc.channel0, timer.clone(), pin_r).expect("failed to setup chhannel r");
-        let channel_g = Channel::new(p.ledc.channel1, timer.clone(), pin_g).expect("failed to setup chhannel g");
-        let channel_b = Channel::new(p.ledc.channel2, timer.clone(), pin_b).expect("failed to setup chhannel b");
+        let channel_r = Channel::new(p.ledc.channel0, timer.clone(), pin_r)
+            .expect("failed to setup chhannel r");
+        let channel_g = Channel::new(p.ledc.channel1, timer.clone(), pin_g)
+            .expect("failed to setup chhannel g");
+        let channel_b = Channel::new(p.ledc.channel2, timer.clone(), pin_b)
+            .expect("failed to setup chhannel b");
 
-        // let light = light::Light::new((pin_r, pin_g, pin_b));
         let light = light::Light::new((channel_r, channel_g, channel_b));
         let light = Box::new(light);
         components.push(light);

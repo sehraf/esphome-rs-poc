@@ -6,7 +6,6 @@ use crate::{
     api::{ColorMode, LightStateResponse, ListEntitiesLightResponse},
     components::{Component, ComponentUpdate},
     consts::LIST_ENTITIES_LIGHT_RESPONSE,
-    // utils::EspHomeApiMsg,
     utils::*,
 };
 
