@@ -118,6 +118,7 @@ where
                 } else {
                     // turn off
                     if let Some(pins) = &mut self.pin_rgb {
+                        set_pwm(&mut pins.0, 0.);
                         set_pwm(&mut pins.1, 0.);
                         set_pwm(&mut pins.2, 0.);
                     }
