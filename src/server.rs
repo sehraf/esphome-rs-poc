@@ -30,6 +30,7 @@ impl Listener {
         let listener = listener.expect("failed to set up listener");
 
         while let Ok((socket, _addr)) = listener.accept().await {
+            // wrap stream in arc
             send.send(ComponentUpdate::Connection(Arc::new(socket)))
                 .await
                 .expect("failed to sent to server");
@@ -80,7 +81,6 @@ impl EspHomeApiServer {
         EspHomeApiServer {
             device,
             components: Mutex::new(components),
-            // listener,
             client_recv,
             client_send,
             clients: vec![],
@@ -93,9 +93,11 @@ impl EspHomeApiServer {
                 Ok(upd) => match upd {
                     ComponentUpdate::Closing => (),
                     ComponentUpdate::Connection(socket) => {
+                        // create new communication channels
                         let (server_send, client_recv) = async_channel::unbounded();
                         let client_send = self.client_send.clone();
                         let device = self.device.to_owned();
+                        // unpack arc
                         let socket = Arc::<Async<std::net::TcpStream>>::try_unwrap(socket)
                             .expect("failed to get socket");
                         smol::spawn(async {
@@ -116,24 +118,9 @@ impl EspHomeApiServer {
                         let resp = self.components.lock().expect("mutex poisoned").hanlde(&upd);
                         // for now, send to all
                         for resp in resp.into_iter() {
-                            let mut index = 0;
-                            while index < self.clients.len() {
-                                // how to do this better?
-                                let remove = if let Err(err) =
-                                    self.clients[index].send(resp.to_owned()).await
-                                {
-                                    warn!("server 2 client: {}", err);
-                                    true
-                                } else {
-                                    false
-                                };
-
-                                if remove {
-                                    self.clients.remove(index);
-                                } else {
-                                    index += 1;
-                                }
-                            }
+                            self.clients.retain(|client| {
+                                smol::block_on(client.send(resp.to_owned())).is_ok()
+                            });
                         }
                     }
                 },

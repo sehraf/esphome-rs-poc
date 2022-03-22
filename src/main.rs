@@ -23,7 +23,7 @@ use esp_idf_svc::sysloop::*;
 use esp_idf_svc::wifi::*;
 
 const MAC: &str = "<MAC>"; // ESP32-C3-13
-// const SSID: &str = env!("RUST_ESP32_STD_HELLO_WIFI_SSID");<
+// const SSID: &str = env!("RUST_ESP32_STD_HELLO_WIFI_SSID");
 // const PASS: &str = env!("RUST_ESP32_STD_HELLO_WIFI_PASS");
 const SSID: &str = "<SSID>";
 const PASS: &str = "<PASS>";

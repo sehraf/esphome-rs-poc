@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use log::*;
@@ -6,7 +6,7 @@ use log::*;
 use smol::io::AsyncWriteExt;
 
 use crate::{api::*, components::ComponentUpdate, Device};
-use ::protobuf::Message;
+use protobuf::{Message, ProtobufEnum};
 
 // from ESPHome
 const API_MAX: u32 = 1;
@@ -60,6 +60,9 @@ pub struct EspHomeApiClient {
 
     recv: async_channel::Receiver<ComponentUpdate>,
     send: async_channel::Sender<ComponentUpdate>,
+
+    // Component specific options
+    log: LogLevel,
 }
 
 impl EspHomeApiClient {
@@ -75,6 +78,8 @@ impl EspHomeApiClient {
             device,
             recv: receiver,
             send: sender,
+
+            log: LogLevel::LOG_LEVEL_NONE,
         }
     }
 
@@ -97,6 +102,12 @@ impl EspHomeApiClient {
                 }
                 ComponentUpdate::SensorResponse(msg) => {
                     send_packet(&mut self.stream, 25, msg.as_ref()).await?;
+                }
+                ComponentUpdate::Log(msg) => {
+                    // only send when requested
+                    if msg.level.value() <= self.log.value() {
+                        send_packet(&mut self.stream, 25, msg.as_ref()).await?;
+                    }
                 }
             }
         }
@@ -259,7 +270,10 @@ impl EspHomeApiClient {
                 info!("SubscribeLogsRequest");
 
                 let msg = SubscribeLogsRequest::parse_from_bytes(&msg)?;
+                // update log state for client
+                self.log = msg.level;
 
+                // TODO
                 info!("received request for log subscription:");
                 info!("  level:       {:?}", &msg.level);
                 info!("  dump-config: {:?}", &msg.dump_config);
@@ -299,14 +313,11 @@ impl EspHomeApiClient {
                 // break;
             }
         }
-        // }
         Ok(())
     }
 
     pub async fn run(&mut self) {
-        while self.handle().await.is_ok() {
-            std::thread::sleep(Duration::from_millis(100));
-        }
+        while self.handle().await.is_ok() {}
         self.send
             .send(ComponentUpdate::Closing)
             .await

@@ -36,15 +36,18 @@ pub enum ComponentUpdate {
     /// Send a tick to all modules that can then decide whether to generate an update or not
     Update,
 
+    /// Client is connecting, `Arc` is required for `Clone`, thoguh is should not be used
+    Connection(Arc<smol::Async<TcpStream>>),
+    /// Client is closing the connection
+    Closing,
+
+    /// Component related values
     LightRequest(Box<LightCommandRequest>),
     LightResponse(Box<LightStateResponse>),
 
     SensorResponse(Box<SensorStateResponse>),
 
-    /// Client is connecting
-    Connection(Arc<smol::Async<TcpStream>>),
-    /// Client is closing the connection
-    Closing,
+    Log(Box<SubscribeLogsResponse>)
 }
 
 /// Ownder and manager of all (hardware) components
@@ -54,11 +57,41 @@ pub struct ComponentManager {
     components: Vec<Box<dyn Component>>,
 }
 
+/// Small helper for getting a GPIO as output
+macro_rules! gpio_out {
+    ($peripherals:ident, $gpio:ident) => {
+        $peripherals
+            .pins
+            .$gpio
+            .into_output()
+            .expect("failed to aquire pin")
+    };
+}
+
+/// Small helper for getting a GPIO as input_output
+macro_rules! gpio_in_out {
+    ($peripherals:ident, $gpio:ident) => {
+        $peripherals
+            .pins
+            .$gpio
+            .into_input_output()
+            .expect("failed to aquire pin")
+    };
+}
+
 impl ComponentManager {
     pub fn new() -> ComponentManager {
         // Preripherals live here
         let p =
             esp_idf_hal::peripherals::Peripherals::take().expect("Failed to obtain Peripherals");
+        // time for whoever needs it
+        let timer = Arc::new(
+            Timer::new(
+                p.ledc.timer0,
+                &TimerConfig::default().frequency(25.kHz().into()),
+            )
+            .expect("failed to setup timer"),
+        );
 
         let mut components: Vec<Box<dyn Component>> = vec![];
 
@@ -66,23 +99,12 @@ impl ComponentManager {
         // # I2C - GPIO0 + GPIO2
         // #######################################
         let pins = i2c::MasterPins {
-            scl: p
-                .pins
-                .gpio0
-                .into_input_output()
-                .expect("failed to aquire pin"),
-            sda: p
-                .pins
-                .gpio2
-                .into_input_output()
-                .expect("failed to aquire pin"),
+            scl: gpio_in_out!(p, gpio0),
+            sda: gpio_in_out!(p, gpio2),
         };
         let config = i2c::config::MasterConfig::default();
         #[allow(unused_variables)]
         let i2c_bus = i2c::Master::new(p.i2c0, pins, config).expect("failed to aquire i2c");
-        // let i2c_bus = Arc::new(Mutex::new(
-        //     i2c::Master::new(p.i2c0, pins, config).expect("failed to aquire i2c"),
-        // ));
 
         // #######################################
         // # BME280
@@ -155,7 +177,7 @@ impl ComponentManager {
         // #######################################
         // # LED - GPIO9
         // #######################################
-        let pin = p.pins.gpio9.into_output().expect("failed to aquire pin");
+        let pin = gpio_out!(p, gpio9);
         let led = led::Led::new(pin);
         let led = Box::new(led);
         components.push(led);
@@ -163,12 +185,10 @@ impl ComponentManager {
         // #######################################
         // # RGB - GPIO3 + GPIO4 + GPIO5
         // #######################################
-        let pin_r = p.pins.gpio3.into_output().expect("failed to aquire pin");
-        let pin_g = p.pins.gpio4.into_output().expect("failed to aquire pin");
-        let pin_b = p.pins.gpio5.into_output().expect("failed to aquire pin");
+        let pin_r = gpio_out!(p, gpio3);
+        let pin_g = gpio_out!(p, gpio4);
+        let pin_b = gpio_out!(p, gpio5);
 
-        let config = TimerConfig::default().frequency(25.kHz().into());
-        let timer = Arc::new(Timer::new(p.ledc.timer0, &config).expect("failed to setup timer"));
         let channel_r = Channel::new(p.ledc.channel0, timer.clone(), pin_r)
             .expect("failed to setup chhannel r");
         let channel_g = Channel::new(p.ledc.channel1, timer.clone(), pin_g)
