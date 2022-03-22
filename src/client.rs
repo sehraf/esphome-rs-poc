@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::{bail, Result};
 use log::*;
@@ -84,6 +84,10 @@ impl EspHomeApiClient {
     }
 
     pub async fn handle(&mut self) -> Result<()> {
+        // TODO
+        // We should wait for both async, internal messages and external data.
+        // There is `select!` but futures-lite does not support this.
+
         // check for pending packages to send
         while let Ok(msg) = self.recv.try_recv() {
             info!("Client: handling message");
@@ -317,7 +321,13 @@ impl EspHomeApiClient {
     }
 
     pub async fn run(&mut self) {
-        while self.handle().await.is_ok() {}
+        while self.handle().await.is_ok() {
+            // TODO
+            // This is a hack to give the rest of the system some time to process any generated messages.
+            // We wait for the answers to arive, before entering `handle()` again.
+            // Also see comment in `handle()`.
+            std::thread::sleep(Duration::from_millis(100));
+        }
         self.send
             .send(ComponentUpdate::Closing)
             .await
