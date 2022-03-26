@@ -141,7 +141,7 @@ fn run_esphome(ip: &Ipv4Addr) {
 
     // setup server
     smol::block_on(async {
-        let server = server::EspHomeApiServer::new(device, comp_mngr).await;
+        let server = server::EspHomeApiServer::new(device, comp_mngr);
         let _server = Box::new(server).run_asyn().await;
     });
 }
