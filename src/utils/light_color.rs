@@ -1,63 +1,15 @@
 #[derive(Debug, Clone, Copy)]
 pub enum LightColor {
-    // red: f32,
-    // green: f32,
-    // blue: f32,
-    // #[allow(dead_code)]
-    // has_rgb: bool,
-
-    // white: f32,
-    // #[allow(dead_code)]
-    // has_white: bool,
-
-    // warm_white: f32,
     Monochromatic(f32),
     Rgb(f32, f32, f32),
     Rgbw(f32, f32, f32, f32),
     Rgbww(f32, f32, f32, f32, f32),
 }
 
-// #[allow(dead_code)]
-// impl Rgbw {
-//     pub fn scale(&self, factor: f32) -> Self {
-//         (
-//             self.red() * factor,
-//             self.green() * factor,
-//             self.blue() * factor,
-//             self.white() * factor,
-//         )
-//             .into()
-//     }
-
-//     pub fn set_red(&mut self, red: f32) {
-//         self.red = red;
-//     }
-//     pub fn set_green(&mut self, green: f32) {
-//         self.green = green;
-//     }
-//     pub fn set_blue(&mut self, blue: f32) {
-//         self.blue = blue;
-//     }
-//     pub fn set_white(&mut self, white: f32) {
-//         self.white = white;
-//     }
-
-//     pub fn red(&self) -> f32 {
-//         self.red
-//     }
-//     pub fn green(&self) -> f32 {
-//         self.green
-//     }
-//     pub fn blue(&self) -> f32 {
-//         self.blue
-//     }
-//     pub fn white(&self) -> f32 {
-//         self.white
-//     }
-// }
 #[allow(dead_code)]
 impl LightColor {
     pub fn scale(&self, factor: f32) -> Self {
+        // create a copy!
         match self {
             LightColor::Monochromatic(w) => (w * factor).into(),
             LightColor::Rgb(r, g, b) => (r * factor, g * factor, b * factor).into(),

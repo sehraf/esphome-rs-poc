@@ -8,8 +8,6 @@ use crate::{
     utils::{light_color::LightColor, *},
 };
 
-use log::info;
-
 enum LightPlatform {
     Binary {
         pin: Box<dyn OutputPin<Error = EspError>>,
@@ -84,13 +82,6 @@ impl Light {
         let mut resp = LightStateResponse::new();
         resp.set_key(self.get_key());
         resp.set_state(self.state);
-        // if self.pin_rgb.is_some() {
-        //     resp.set_red(self.rgbw.red());
-        //     resp.set_green(self.rgbw.green());
-        //     resp.set_blue(self.rgbw.blue());
-        // }
-        // resp.set_brightness(self.brightness);
-
         match self.platform {
             LightPlatform::Binary { .. } => (),
             LightPlatform::Monochromatic { brightness, .. }
@@ -116,19 +107,12 @@ fn set_pwm(pin: &mut Box<dyn PwmPin<Duty = u32>>, brightness: f32) {
 
 impl Component for Light {
     fn get_description(&self) -> Vec<(u32, Box<dyn protobuf::Message>)> {
-        // let modes = if self.pin_rgb.is_some() {
-        //     vec![ColorMode::COLOR_MODE_BRIGHTNESS, ColorMode::COLOR_MODE_RGB]
-        // } else {
-        //     unreachable!("no pins configured, crashing!");
-        // };
-
         let mut resp = ListEntitiesLightResponse::new();
         resp.set_disabled_by_default(false);
         resp.set_key(self.get_key());
         resp.set_name(self.base.get_name());
         resp.set_object_id(self.base.get_object_id());
         resp.set_unique_id(name_to_unique(&self.base.name, "light"));
-        // resp.set_supported_color_modes(modes);
         match self.platform {
             LightPlatform::Binary { .. } => {
                 resp.set_supported_color_modes(vec![ColorMode::COLOR_MODE_ON_OFF])
@@ -160,9 +144,6 @@ impl Component for Light {
                 }
 
                 // brightness
-                // if req.get_has_brightness() {
-                //     self.brightness = req.get_brightness();
-                // }
                 if req.get_has_brightness() {
                     match &mut self.platform {
                         LightPlatform::Binary { .. } => unreachable!("light has no brightness"),
@@ -174,11 +155,6 @@ impl Component for Light {
                 }
 
                 // update colors
-                // if req.get_has_rgb() && self.pin_rgb.is_some() {
-                //     self.rgbw.set_red(req.get_red());
-                //     self.rgbw.set_green(req.get_green());
-                //     self.rgbw.set_blue(req.get_blue());
-                // }
                 if req.get_has_rgb() {
                     match &mut self.platform {
                         LightPlatform::Binary { .. } | LightPlatform::Monochromatic { .. } => {
@@ -193,22 +169,6 @@ impl Component for Light {
                 }
 
                 // set new values
-                // if self.state {
-                //     // scale
-                //     let rgbw = self.rgbw.scale(self.brightness);
-                //     if let Some(pins) = &mut self.pin_rgb {
-                //         set_pwm(&mut pins.0, rgbw.red());
-                //         set_pwm(&mut pins.1, rgbw.green());
-                //         set_pwm(&mut pins.2, rgbw.blue());
-                //     }
-                // } else {
-                //     // turn off
-                //     if let Some(pins) = &mut self.pin_rgb {
-                //         set_pwm(&mut pins.0, 0.);
-                //         set_pwm(&mut pins.1, 0.);
-                //         set_pwm(&mut pins.2, 0.);
-                //     }
-                // }
                 match &mut self.platform {
                     LightPlatform::Binary { pin } => {
                         if self.state {
