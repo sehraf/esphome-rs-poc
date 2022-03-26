@@ -31,8 +31,8 @@ native = ["esp-idf-sys/native"]
 
 mdns = []
 
-bme280 = ["bme280"]
-ccs811 = ["embedded-ccs811"]
+has_bme280 = ["bme280"]
+has_ccs811 = ["embedded-ccs811"]
 
 experimental = [
     "esp-idf-svc/experimental",

@@ -1,6 +1,6 @@
 use convert_case::{Case::Snake, Casing};
 
-pub mod rgbw;
+pub mod light_color;
 
 fn fnv1_hash(input: &str) -> u32 {
     let mut state = 2166136261u32;

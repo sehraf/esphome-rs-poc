@@ -19,14 +19,14 @@ use protobuf::Message;
 use crate::{api::*, utils::*};
 
 // crate is broken
-#[cfg(feature = "bme280")]
+#[cfg(feature = "has_bme280")]
 pub mod bme280;
 
 // never worked
-#[cfg(feature = "ccs811")]
+#[cfg(feature = "has_ccs811")]
 pub mod ccs811;
 
-pub mod led;
+// pub mod led;
 pub mod light;
 
 pub struct BaseComponent {
@@ -154,7 +154,7 @@ impl ComponentManager {
         // #######################################
         // # BME280
         // #######################################
-        #[cfg(feature = "bme280")]
+        #[cfg(feature = "has_bme280")]
         {
             // initialize the BME280 using the primary I2C address 0x76
             let mut bme280 =
@@ -201,7 +201,7 @@ impl ComponentManager {
         // #######################################
         // # CCS811
         // #######################################
-        #[cfg(feature = "ccs811")]
+        #[cfg(feature = "has_ccs811")]
         {
             let ccs811 = Ccs811Awake::new(i2c_bus, SlaveAddr::Default);
             let mut ccs811 = ccs811.start_application().ok().unwrap();
@@ -231,18 +231,18 @@ impl ComponentManager {
         {
             const NAME: &str = "Rusty old LED";
 
-            let pin_blue = gpio_out!(p, gpio9); // GPIO LED (blue)
-            components.push(Box::new(led::Led::new(
+            let pin_blue = Box::new(gpio_out!(p, gpio9)); // GPIO LED (blue)
+            components.push(Box::new(light::Light::new_binary(
                 NAME.to_owned() + " " + "blue",
                 pin_blue,
             )));
-            let pin_w = gpio_out!(p, gpio18); // LED Warm (yellow)
-            components.push(Box::new(led::Led::new(
+            let pin_w = Box::new(gpio_out!(p, gpio18)); // LED Warm (yellow)
+            components.push(Box::new(light::Light::new_binary(
                 NAME.to_owned() + " " + "yellow",
                 pin_w,
             )));
-            let pin_c = gpio_out!(p, gpio19); // LED Cold (white)
-            components.push(Box::new(led::Led::new(
+            let pin_c = Box::new(gpio_out!(p, gpio19)); // LED Cold (white)
+            components.push(Box::new(light::Light::new_binary(
                 NAME.to_owned() + " " + "white",
                 pin_c,
             )));
@@ -258,14 +258,20 @@ impl ComponentManager {
             let pin_g = gpio_out!(p, gpio4);
             let pin_b = gpio_out!(p, gpio5);
 
-            let channel_r = Channel::new(p.ledc.channel0, timer.clone(), pin_r)
-                .expect("failed to setup chhannel r");
-            let channel_g = Channel::new(p.ledc.channel1, timer.clone(), pin_g)
-                .expect("failed to setup chhannel g");
-            let channel_b = Channel::new(p.ledc.channel2, timer.clone(), pin_b)
-                .expect("failed to setup chhannel b");
+            let channel_r = Box::new(
+                Channel::new(p.ledc.channel0, timer.clone(), pin_r)
+                    .expect("failed to setup chhannel r"),
+            );
+            let channel_g = Box::new(
+                Channel::new(p.ledc.channel1, timer.clone(), pin_g)
+                    .expect("failed to setup chhannel g"),
+            );
+            let channel_b = Box::new(
+                Channel::new(p.ledc.channel2, timer.clone(), pin_b)
+                    .expect("failed to setup chhannel b"),
+            );
 
-            let light = light::Light::new(NAME.to_owned(), (channel_r, channel_g, channel_b));
+            let light = light::Light::new_rgb(NAME.to_owned(), (channel_r, channel_g, channel_b));
             let light = Box::new(light);
             components.push(light);
         }
