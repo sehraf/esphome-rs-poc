@@ -26,8 +26,8 @@ pub mod bme280;
 #[cfg(feature = "has_ccs811")]
 pub mod ccs811;
 
-// pub mod led;
 pub mod light;
+pub mod logger;
 
 pub struct BaseComponent {
     name: String,
@@ -285,12 +285,6 @@ impl ComponentManager {
             const NAME: &str = "Rusty old LED";
 
             // GPIO LED (blue)
-            // make_light_binbary!(
-            //     NAME.to_owned() + " " + "blue",
-            //     peripherals,
-            //     gpio9,
-            //     components
-            // );
             make_light_monochromatic!(
                 NAME.to_owned() + " " + "blue",
                 peripherals,
@@ -299,7 +293,6 @@ impl ComponentManager {
                 timer,
                 components
             );
-
             // LED Warm (yellow)
             make_light_binbary!(
                 NAME.to_owned() + " " + "yellow",

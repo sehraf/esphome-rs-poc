@@ -11,7 +11,7 @@ use std::{
 
 use crate::{
     client::EspHomeApiClient,
-    components::{ComponentManager, ComponentUpdate},
+    components::{logger::EspHomeLogger, ComponentManager, ComponentUpdate},
     Device, PORT,
 };
 
@@ -65,7 +65,7 @@ pub struct EspHomeApiServer {
 }
 
 impl EspHomeApiServer {
-    pub async fn new(device: Arc<Device>, components: Box<ComponentManager>) -> Self {
+    pub fn new(device: Arc<Device>, components: Box<ComponentManager>) -> Self {
         info!("setting up ...");
 
         // server communication channels
@@ -74,9 +74,12 @@ impl EspHomeApiServer {
         smol::spawn(Listener::run(client_send.clone())).detach();
         info!("listener running");
 
-        // setup timer
         smol::spawn(TickTimer::run(client_send.clone())).detach();
         info!("timer running");
+
+        // let logs = crate::components::logger::LOGGER.get_receiver();
+        // let logs = EspHomeLogger::new(client_send.clone());
+        EspHomeLogger::set_send(client_send.clone());
 
         EspHomeApiServer {
             device,
@@ -88,7 +91,9 @@ impl EspHomeApiServer {
     }
 
     pub async fn run_asyn(&mut self) {
+        let mut msg_for_clients = vec![];
         loop {
+            msg_for_clients.clear();
             match self.client_recv.recv().await {
                 Ok(upd) => match upd {
                     ComponentUpdate::Closing => (),
@@ -114,17 +119,21 @@ impl EspHomeApiServer {
 
                         self.clients.push(server_send);
                     }
+                    ComponentUpdate::Log(msg) => msg_for_clients.push(ComponentUpdate::Log(msg)),
                     upd @ _ => {
-                        let resp = self.components.lock().expect("mutex poisoned").hanlde(&upd);
-                        // for now, send to all
-                        for resp in resp.into_iter() {
-                            self.clients.retain(|client| {
-                                smol::block_on(client.send(resp.to_owned())).is_ok()
-                            });
-                        }
+                        msg_for_clients.append(
+                            &mut self.components.lock().expect("mutex poisoned").hanlde(&upd),
+                        );
                     }
                 },
                 Err(err) => warn!("{}", &err),
+            }
+            // for now, send to all
+            for resp in &msg_for_clients {
+                self.clients.retain(|client| {
+                    let res = smol::block_on(async { client.send(resp.to_owned()).await });
+                    res.is_ok()
+                });
             }
         }
     }

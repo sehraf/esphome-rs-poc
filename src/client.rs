@@ -90,7 +90,9 @@ impl EspHomeApiClient {
 
         // check for pending packages to send
         while let Ok(msg) = self.recv.try_recv() {
-            info!("Client: handling message");
+            // DO NOT LOG ANYTHING IN HERE
+            // It'll create a recursion
+
             // we expect responses here
             match msg {
                 ComponentUpdate::Request(..)
@@ -108,9 +110,12 @@ impl EspHomeApiClient {
                     send_packet(&mut self.stream, 25, msg.as_ref()).await?;
                 }
                 ComponentUpdate::Log(msg) => {
+                    // DO NOT LOG ANYTHING IN HERE
+                    // It'll create a recursion
+
                     // only send when requested
                     if msg.level.value() <= self.log.value() {
-                        send_packet(&mut self.stream, 25, msg.as_ref()).await?;
+                        send_packet(&mut self.stream, 29, msg.as_ref()).await?;
                     }
                 }
             }
@@ -276,20 +281,6 @@ impl EspHomeApiClient {
                 let msg = SubscribeLogsRequest::parse_from_bytes(&msg)?;
                 // update log state for client
                 self.log = msg.level;
-
-                // TODO
-                info!("received request for log subscription:");
-                info!("  level:       {:?}", &msg.level);
-                info!("  dump-config: {:?}", &msg.dump_config);
-                warn!("NOT IMPLEMENTED");
-
-                // TODO
-                // send dummy response
-                let mut resp = SubscribeLogsResponse::new();
-                resp.level = LogLevel::LOG_LEVEL_WARN;
-                resp.message = String::from("\x1b[0;33m NOT IMPLEMENTED\x1b[0m");
-
-                send_packet(&mut self.stream, 29, &resp).await?;
             }
             32 => {
                 // LightCommandRequest
