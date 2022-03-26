@@ -14,7 +14,10 @@ No! My main goal is to (maybe ) replace a few of my ESP at home with Rust, nothi
 Not many ...
 
 ### Light
-There is a simple on/off light (`ColorMode::COLOR_MODE_ON_OFF`) as well as a RGB LED (`ColorMode::COLOR_MODE_BRIGHTNESS, ColorMode::COLOR_MODE_RGB`) implemented.
+The following light [components](https://esphome.io/#light-components) are implented:
+- [binary](https://esphome.io/components/light/binary.html)
+- [monochromatic](https://esphome.io/components/light/monochromatic.html)
+- [RGB](https://esphome.io/components/light/rgb.html)
 
 ### Sensor
 I've hocked up a BME280 via I2C but the corresponsing crate is broken. So, while the code works it is useless.
