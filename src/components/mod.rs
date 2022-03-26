@@ -102,36 +102,88 @@ pub struct ComponentManager {
 
 /// Small helper for getting a GPIO as output
 macro_rules! gpio_out {
-    ($peripherals:ident, $gpio:ident) => {
+    ($peripherals:expr, $gpio:ident) => {
         $peripherals
             .pins
             .$gpio
             .into_output()
-            .expect("failed to aquire pin")
+            .expect("failed to acquire pin")
     };
 }
 
 /// Small helper for getting a GPIO as input_output
 #[allow(unused_macros)]
 macro_rules! gpio_in_out {
-    ($peripherals:ident, $gpio:ident) => {
+    ($peripherals:expr, $gpio:ident) => {
         $peripherals
             .pins
             .$gpio
             .into_input_output()
-            .expect("failed to aquire pin")
+            .expect("failed to acquire pin")
+    };
+}
+
+#[allow(unused_macros)]
+macro_rules! make_light_binbary {
+    ($name: expr, $peripherals:expr, $gpio:ident, $components:expr) => {
+        // get pin, boxed
+        let pin = Box::new(gpio_out!($peripherals, $gpio));
+        // create light, boxed
+        let light = Box::new(light::Light::new_binary($name, pin));
+        // add to components
+        $components.push(light);
+    };
+}
+
+macro_rules! ledc_channel {
+    ($peripherals:expr, $gpio:ident, $channel:ident, $timer: expr) => {
+        Channel::new(
+            $peripherals.ledc.$channel,
+            $timer.clone(),
+            gpio_out!($peripherals, $gpio),
+        )
+        .expect("failed to setup chhannel")
+    };
+}
+
+#[allow(unused_macros)]
+macro_rules! make_light_monochromatic {
+    ($name: expr, $peripherals:expr, $gpio:ident, $channel:ident, $timer: expr, $components:expr) => {
+        let channel = Box::new(ledc_channel!($peripherals, $gpio, $channel, $timer));
+        // create light, boxed
+        let light = Box::new(light::Light::new_monochromatic($name, channel));
+        // add to components
+        $components.push(light);
+    };
+}
+
+#[allow(unused_macros)]
+macro_rules! make_light_rgb {
+    ($name: expr, $peripherals:expr, $gpio_r:ident, $gpio_g:ident, $gpio_b:ident, $channel_r:ident, $channel_g:ident, $channel_b:ident, $timer: expr, $components:expr) => {
+        // get channels
+        let channel_r = Box::new(ledc_channel!($peripherals, $gpio_r, $channel_r, $timer));
+        let channel_g = Box::new(ledc_channel!($peripherals, $gpio_g, $channel_g, $timer));
+        let channel_b = Box::new(ledc_channel!($peripherals, $gpio_b, $channel_b, $timer));
+
+        // create light, boxed
+        let light = Box::new(light::Light::new_rgb(
+            $name,
+            (channel_r, channel_g, channel_b),
+        ));
+        // add to components
+        $components.push(light);
     };
 }
 
 impl ComponentManager {
     pub fn new() -> ComponentManager {
         // Preripherals live here
-        let p =
+        let peripherals =
             esp_idf_hal::peripherals::Peripherals::take().expect("Failed to obtain Peripherals");
         // time for whoever needs it
         let timer = Arc::new(
             Timer::new(
-                p.ledc.timer0,
+                peripherals.ledc.timer0,
                 &TimerConfig::default().frequency(25.kHz().into()),
             )
             .expect("failed to setup timer"),
@@ -143,13 +195,14 @@ impl ComponentManager {
         // # I2C - GPIO0 + GPIO2
         // #######################################
         let pins = i2c::MasterPins {
-            scl: gpio_in_out!(p, gpio0),
-            sda: gpio_in_out!(p, gpio2),
+            scl: gpio_in_out!(peripherals, gpio0),
+            sda: gpio_in_out!(peripherals, gpio2),
         };
         let config = i2c::config::MasterConfig::default();
         #[allow(unused_variables)]
         // cannot be shared at the moment
-        let i2c_bus = i2c::Master::new(p.i2c0, pins, config).expect("failed to aquire i2c");
+        let i2c_bus =
+            i2c::Master::new(peripherals.i2c0, pins, config).expect("failed to aquire i2c");
 
         // #######################################
         // # BME280
@@ -226,26 +279,41 @@ impl ComponentManager {
         }
 
         // #######################################
-        // # LED - GPIO9
+        // # LEDs - GPIO9, GPIO18, GPIO19
         // #######################################
         {
             const NAME: &str = "Rusty old LED";
 
-            let pin_blue = Box::new(gpio_out!(p, gpio9)); // GPIO LED (blue)
-            components.push(Box::new(light::Light::new_binary(
+            // GPIO LED (blue)
+            // make_light_binbary!(
+            //     NAME.to_owned() + " " + "blue",
+            //     peripherals,
+            //     gpio9,
+            //     components
+            // );
+            make_light_monochromatic!(
                 NAME.to_owned() + " " + "blue",
-                pin_blue,
-            )));
-            let pin_w = Box::new(gpio_out!(p, gpio18)); // LED Warm (yellow)
-            components.push(Box::new(light::Light::new_binary(
+                peripherals,
+                gpio9,
+                channel3,
+                timer,
+                components
+            );
+
+            // LED Warm (yellow)
+            make_light_binbary!(
                 NAME.to_owned() + " " + "yellow",
-                pin_w,
-            )));
-            let pin_c = Box::new(gpio_out!(p, gpio19)); // LED Cold (white)
-            components.push(Box::new(light::Light::new_binary(
+                peripherals,
+                gpio18,
+                components
+            );
+            // LED Cold (white)
+            make_light_binbary!(
                 NAME.to_owned() + " " + "white",
-                pin_c,
-            )));
+                peripherals,
+                gpio19,
+                components
+            );
         }
 
         // #######################################
@@ -254,26 +322,19 @@ impl ComponentManager {
         {
             const NAME: &str = "Rusty old RGB Light";
 
-            let pin_r = gpio_out!(p, gpio3);
-            let pin_g = gpio_out!(p, gpio4);
-            let pin_b = gpio_out!(p, gpio5);
-
-            let channel_r = Box::new(
-                Channel::new(p.ledc.channel0, timer.clone(), pin_r)
-                    .expect("failed to setup chhannel r"),
+            // build in RGB LED
+            make_light_rgb!(
+                NAME.to_owned() + " " + "onboard",
+                peripherals,
+                gpio3,
+                gpio4,
+                gpio5,
+                channel0,
+                channel1,
+                channel2,
+                timer,
+                components
             );
-            let channel_g = Box::new(
-                Channel::new(p.ledc.channel1, timer.clone(), pin_g)
-                    .expect("failed to setup chhannel g"),
-            );
-            let channel_b = Box::new(
-                Channel::new(p.ledc.channel2, timer.clone(), pin_b)
-                    .expect("failed to setup chhannel b"),
-            );
-
-            let light = light::Light::new_rgb(NAME.to_owned(), (channel_r, channel_g, channel_b));
-            let light = Box::new(light);
-            components.push(light);
         }
 
         ComponentManager { components }
