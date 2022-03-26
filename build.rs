@@ -6,6 +6,8 @@ use embuild::{
     cargo, symgen,
 };
 
+use protobuf_codegen_pure::Customize;
+
 fn main() -> anyhow::Result<()> {
     // Necessary because of this issue: https://github.com/rust-lang/cargo/issues/9641
     LinkArgs::output_propagated("ESP_IDF")?;
@@ -29,5 +31,22 @@ fn main() -> anyhow::Result<()> {
 
     cfg.output();
 
+    build_protobuf();
+
     Ok(())
+}
+
+fn build_protobuf() {
+    let out_dir = std::env::var("OUT_DIR").unwrap();
+
+    protobuf_codegen_pure::Codegen::new()
+        .customize(Customize {
+            gen_mod_rs: Some(true),
+            ..Default::default()
+        })
+        .out_dir(out_dir)
+        .input("src/api.proto")
+        .include("src/")
+        .run()
+        .expect("protoc");
 }

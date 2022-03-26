@@ -4,15 +4,13 @@ use embedded_hal::digital::v2::OutputPin;
 
 use crate::{
     api::{ColorMode, LightStateResponse, ListEntitiesLightResponse},
-    components::{Component, ComponentUpdate},
+    components::{BaseComponent, Component, ComponentUpdate},
     consts::LIST_ENTITIES_LIGHT_RESPONSE,
     utils::*,
 };
 
-const NAME: &str = "Rusty old LED";
-
 pub struct Led<PIN> {
-    key: u32,
+    base: BaseComponent,
 
     state: bool,
     pin: PIN,
@@ -23,21 +21,21 @@ where
     PIN: OutputPin<Error = E>,
     E: std::fmt::Debug,
 {
-    pub fn new(pin: PIN) -> Led<PIN> {
+    pub fn new(name: String, pin: PIN) -> Led<PIN> {
         Led {
-            key: name_to_hash(NAME),
+            base: BaseComponent::new(name),
             state: false,
             pin,
         }
     }
 
     fn get_key(&self) -> u32 {
-        self.key
+        self.base.get_object_id_hash()
     }
 
     pub fn as_response(&self) -> Box<LightStateResponse> {
         let mut resp = LightStateResponse::new();
-        resp.set_key(self.key);
+        resp.set_key(self.get_key());
         resp.set_state(self.state);
         Box::new(resp)
     }
@@ -52,12 +50,15 @@ where
         let mut resp = ListEntitiesLightResponse::new();
         resp.set_disabled_by_default(false);
         resp.set_key(self.get_key());
-        resp.set_name(String::from(NAME));
-        resp.set_object_id(name_to_object(NAME));
-        resp.set_unique_id(name_to_unique(NAME, "led"));
+        resp.set_name(self.base.get_name().to_owned());
+        resp.set_object_id(self.base.get_object_id().to_owned());
+        resp.set_unique_id(name_to_unique(&self.base.name, "led"));
         resp.set_supported_color_modes(vec![ColorMode::COLOR_MODE_ON_OFF]);
 
-        vec![(LIST_ENTITIES_LIGHT_RESPONSE, Box::new(resp))]
+        vec![(
+            LIST_ENTITIES_LIGHT_RESPONSE,
+            Box::new(resp) as Box<dyn Message>,
+        )]
     }
 
     fn handle_update(&mut self, msg: &ComponentUpdate) -> Vec<ComponentUpdate> {

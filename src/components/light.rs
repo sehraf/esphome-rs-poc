@@ -2,15 +2,13 @@ use embedded_hal::PwmPin;
 
 use crate::{
     api::{ColorMode, LightStateResponse, ListEntitiesLightResponse},
-    components::{Component, ComponentUpdate},
+    components::{BaseComponent, Component, ComponentUpdate},
     consts::LIST_ENTITIES_LIGHT_RESPONSE,
     utils::{rgbw::Rgbw, *},
 };
 
-const NAME: &str = "Rusty old RGB Light";
-
 pub struct Light<PINR, PING, PINB> {
-    key: u32,
+    base: BaseComponent,
 
     state: bool,
     rgbw: Rgbw,
@@ -25,9 +23,9 @@ where
     PING: PwmPin,
     PINB: PwmPin,
 {
-    pub fn new(pins: (PINR, PING, PINB)) -> Light<PINR, PING, PINB> {
+    pub fn new(name: String, pins: (PINR, PING, PINB)) -> Light<PINR, PING, PINB> {
         Light {
-            key: name_to_hash(NAME),
+            base: BaseComponent::new(name),
             state: false,
 
             rgbw: (1., 1., 1.).into(),
@@ -38,7 +36,7 @@ where
     }
 
     fn get_key(&self) -> u32 {
-        self.key
+        self.base.get_object_id_hash()
     }
 
     fn as_response(&self) -> Box<LightStateResponse> {
@@ -76,13 +74,16 @@ where
 
         let mut resp = ListEntitiesLightResponse::new();
         resp.set_disabled_by_default(false);
-        resp.set_key(self.key);
-        resp.set_name(String::from(NAME));
-        resp.set_object_id(name_to_object(NAME));
-        resp.set_unique_id(name_to_unique(NAME, "light"));
+        resp.set_key(self.get_key());
+        resp.set_name(self.base.get_name());
+        resp.set_object_id(self.base.get_object_id());
+        resp.set_unique_id(name_to_unique(&self.base.name, "light"));
         resp.set_supported_color_modes(modes);
 
-        vec![(LIST_ENTITIES_LIGHT_RESPONSE, Box::new(resp))]
+        vec![(
+            LIST_ENTITIES_LIGHT_RESPONSE,
+            Box::new(resp) as Box<dyn protobuf::Message>,
+        )]
     }
 
     fn handle_update(&mut self, msg: &ComponentUpdate) -> Vec<ComponentUpdate> {
