@@ -14,7 +14,7 @@ No! My main goal is to (maybe ) replace a few of my ESP at home with Rust, nothi
 Not many ...
 
 ### Light
-The following light [components](https://esphome.io/#light-components) are implented:
+The following light [components](https://esphome.io/#light-components) are implemented:
 - [binary](https://esphome.io/components/light/binary.html)
 - [monochromatic](https://esphome.io/components/light/monochromatic.html)
 - [RGB](https://esphome.io/components/light/rgb.html)
