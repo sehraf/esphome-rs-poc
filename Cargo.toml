@@ -1,6 +1,6 @@
 [package]
 name = "esphome-rs-poc"
-version = "0.0.3"
+version = "0.0.4"
 authors = ["sehraf"]
 edition = "2021"
 categories = ["embedded", "hardware-support", "network-programming"]

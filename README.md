@@ -5,10 +5,10 @@ This is a rust implementation of the ESPHome API for an ESP32-C3.
 
 
 ## Why?
-I was looking for an embedded Rust project and was curious how the ESPHome API is working.
+I was looking for an embedded Rust project and was curious how the ESPHome API works.
 
 ## Will you port everything to Rust?
-No! My main goal is to (maybe ) replace a few of my ESP at home with Rust, nothing more.
+No! My main goal is to (maybe ) replace a few of my ESPs at home with Rust, nothing more.
 
 ## Features
 Not many ...
