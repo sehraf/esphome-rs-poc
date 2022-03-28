@@ -128,11 +128,7 @@ impl Log for EspHomeLogger {
                 //     record.args()
                 // );
 
-                let output = format!(
-                    "[{}] {}",
-                    Self::get_marker(record.level()),
-                    record.args()
-                );
+                let output = format!("[{}] {}", Self::get_marker(record.level()), record.args());
 
                 let mut resp = SubscribeLogsResponse::new();
                 resp.set_level(record.level().into());

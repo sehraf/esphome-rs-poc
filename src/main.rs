@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use anyhow::*;
 use async_net::Ipv4Addr;
-use esp_idf_svc::log::EspLogger;
+// use esp_idf_svc::log::EspLogger;
 use log::*;
 
 use protobuf::Message;
@@ -78,8 +78,9 @@ fn main() -> Result<()> {
         })
     })?;
 
-    // Bind the log crate to the ESP Logging facilities
-    EspLogger::initialize_default();
+    // // Bind the log crate to the ESP Logging facilities
+    // EspLogger::initialize_default();
+    components::logger::EspHomeLogger::initialize_default();
 
     let netif_stack = Arc::new(EspNetifStack::new()?);
     let sys_loop_stack = Arc::new(EspSysLoopStack::new()?);
