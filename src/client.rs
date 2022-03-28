@@ -28,21 +28,21 @@ enum ConnectionState {
 }
 
 impl ConnectionState {
-    pub fn is_call_legal(&self, ty: u32) -> bool {
+    pub fn is_call_legal(&self, ty: MessageTypes) -> bool {
         use ConnectionState::*;
 
         match self {
             Initalized => {
                 // only exptec HelloRequest (1)
-                return ty == 1;
+                return ty == MessageTypes::HelloRequest;
             }
             Helloed => {
                 // only expect ConnectRequest (3) and DeviceInfoRequest (9)
-                return ty == 3 || ty == 9;
+                return ty == MessageTypes::ConnectRequest || ty == MessageTypes::DeviceInfoRequest;
             }
             Connected => {
                 // expect everything else
-                return ty != 1 && ty != 3;
+                return ty != MessageTypes::HelloRequest && ty != MessageTypes::ConnectRequest;
             }
         }
     }
@@ -140,7 +140,7 @@ impl EspHomeApiClient {
         let ret = read_packet(&mut self.stream).await;
         let (ty, msg) = match ret {
             Ok((0, v)) if v.is_empty() => return Ok(()),
-            Ok((ty, msg)) => (ty, msg),
+            Ok((ty, msg)) => (ty.into(), msg),
             Err(err) => {
                 if let Some(err) = err.downcast_ref::<std::io::Error>() {
                     // warn!("1 {}", err);
@@ -163,7 +163,7 @@ impl EspHomeApiClient {
 
         // handle special cases independend
         match ty {
-            5 => {
+            MessageTypes::DisconnectRequest => {
                 // DisconnectRequest
                 info!("DisconnectRequest");
                 expect_empty!(msg, "DisconnectRequest");
@@ -172,14 +172,14 @@ impl EspHomeApiClient {
                 send_packet(&mut self.stream, MessageTypes::DisconnectResponse, &resp).await?;
                 return Ok(());
             }
-            6 => {
+            MessageTypes::DisconnectResponse => {
                 // DisconnectResponse
                 info!("DisconnectResponse");
                 expect_empty!(msg, "DisconnectResponse");
 
                 bail!("disconnected");
             }
-            7 => {
+            MessageTypes::PingRequest => {
                 // PingRequest
                 info!("PingRequest");
                 expect_empty!(msg, "PingRequest");
@@ -188,6 +188,7 @@ impl EspHomeApiClient {
                 send_packet(&mut self.stream, MessageTypes::PingResponse, &resp).await?;
                 return Ok(());
             }
+            MessageTypes::PingResponse => {}
             _ => {}
         }
 
@@ -201,7 +202,7 @@ impl EspHomeApiClient {
         }
 
         match ty {
-            1 => {
+            MessageTypes::HelloRequest => {
                 // HelloRequest
                 let req = HelloRequest::parse_from_bytes(&msg)?;
                 info!("HelloRequest");
@@ -220,7 +221,7 @@ impl EspHomeApiClient {
 
                 self.state = ConnectionState::Helloed;
             }
-            3 => {
+            MessageTypes::ConnectRequest => {
                 // ConnectRequest
                 info!("ConnectRequest");
 
@@ -240,11 +241,13 @@ impl EspHomeApiClient {
                 info!("connected");
                 self.state = ConnectionState::Connected;
             }
-            5..=7 => {
+            MessageTypes::DisconnectRequest
+            | MessageTypes::DisconnectResponse
+            | MessageTypes::PingRequest
+            | MessageTypes::PingResponse => {
                 warn!("ty {}: this should already been handled!", ty);
-                // continue;
             }
-            9 => {
+            MessageTypes::DeviceInfoRequest => {
                 // DeviceInfoRequest
                 info!("DeviceInfoRequest");
                 expect_empty!(msg, "DeviceInfoRequest");
@@ -263,7 +266,7 @@ impl EspHomeApiClient {
 
                 send_packet(&mut self.stream, MessageTypes::DeviceInfoResponse, &resp).await?;
             }
-            11 => {
+            MessageTypes::ListEntitiesRequest => {
                 // ListEntitiesRequest
                 info!("ListEntitiesRequest");
                 expect_empty!(msg, "ListEntitiesRequest");
@@ -282,7 +285,7 @@ impl EspHomeApiClient {
                 )
                 .await?;
             }
-            20 => {
+            MessageTypes::SubscribeStatesRequest => {
                 // SubscribeStatesRequest
                 info!("SubscribeStatesRequest");
                 expect_empty!(msg, "SubscribeStatesRequest");
@@ -294,7 +297,7 @@ impl EspHomeApiClient {
                     .await
                     .expect("failed to send");
             }
-            28 => {
+            MessageTypes::SubscribeLogsRequest => {
                 // SubscribeLogsRequest
                 info!("SubscribeLogsRequest");
 
@@ -302,7 +305,7 @@ impl EspHomeApiClient {
                 // update log state for client
                 self.log = msg.level;
             }
-            32 => {
+            MessageTypes::LightCommandRequest => {
                 // LightCommandRequest
                 info!("LightCommandRequest");
 
@@ -311,13 +314,13 @@ impl EspHomeApiClient {
 
                 self.send.send(msg).await.expect("failed to send");
             }
-            34 => {
+            MessageTypes::SubscribeHomeassistantServicesRequest => {
                 // SubscribeHomeassistantServicesRequest
                 info!("SubscribeHomeassistantServicesRequest");
 
                 // !?
             }
-            38 => {
+            MessageTypes::SubscribeHomeAssistantStatesRequest => {
                 // SubscribeHomeAssistantStatesRequest
                 info!("SubscribeHomeAssistantStatesRequest");
 
@@ -439,7 +442,7 @@ async fn send_packet(
     ty: MessageTypes,
     msg: &dyn Message,
 ) -> Result<()> {
-    trace!("sending");
+    trace!("sending {}, {:?}", ty as u32, msg);
     let len = msg.compute_size();
 
     let mut packet = vec![0 as u8];
