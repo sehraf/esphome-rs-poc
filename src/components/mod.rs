@@ -9,14 +9,14 @@ use esp_idf_hal::{
     ledc::{config::TimerConfig, Channel, Timer},
 };
 
-#[cfg(feature = "ccs811")]
+#[cfg(feature = "has_ccs811")]
 use embedded_ccs811::{
     nb::block, Ccs811AppMode, Ccs811Awake, Ccs811BootMode, MeasurementMode, SlaveAddr,
 };
 
 use protobuf::Message;
 
-use crate::{api::*, utils::*};
+use crate::{api::*, consts::MessageTypes, utils::*};
 
 // crate is broken
 #[cfg(feature = "has_bme280")]
@@ -68,7 +68,7 @@ impl BaseComponent {
 pub trait Component {
     fn handle_update(&mut self, msg: &ComponentUpdate) -> Vec<ComponentUpdate>;
 
-    fn get_description(&self) -> Vec<(u32, Box<dyn Message>)>;
+    fn get_description(&self) -> Vec<(MessageTypes, Box<dyn Message>)>;
 }
 
 #[derive(Debug, Clone)]
@@ -345,7 +345,7 @@ impl ComponentManager {
         resp
     }
 
-    pub fn get_descriptions(&mut self) -> Vec<(u32, Box<dyn Message>)> {
+    pub fn get_descriptions(&mut self) -> Vec<(MessageTypes, Box<dyn Message>)> {
         let mut ret = vec![];
 
         for comp in &self.components {

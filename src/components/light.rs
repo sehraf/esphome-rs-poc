@@ -4,7 +4,7 @@ use esp_idf_sys::EspError;
 use crate::{
     api::{ColorMode, LightStateResponse, ListEntitiesLightResponse},
     components::{BaseComponent, Component, ComponentUpdate},
-    consts::LIST_ENTITIES_LIGHT_RESPONSE,
+    consts::MessageTypes,
     utils::{light_color::LightColor, *},
 };
 
@@ -106,7 +106,7 @@ fn set_pwm(pin: &mut Box<dyn PwmPin<Duty = u32>>, brightness: f32) {
 }
 
 impl Component for Light {
-    fn get_description(&self) -> Vec<(u32, Box<dyn protobuf::Message>)> {
+    fn get_description(&self) -> Vec<(MessageTypes, Box<dyn protobuf::Message>)> {
         let mut resp = ListEntitiesLightResponse::new();
         resp.set_disabled_by_default(false);
         resp.set_key(self.get_key());
@@ -127,7 +127,7 @@ impl Component for Light {
         }
 
         vec![(
-            LIST_ENTITIES_LIGHT_RESPONSE,
+            MessageTypes::ListEntitiesLightResponse,
             Box::new(resp) as Box<dyn protobuf::Message>,
         )]
     }

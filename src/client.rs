@@ -5,7 +5,7 @@ use log::*;
 
 use smol::io::AsyncWriteExt;
 
-use crate::{api::*, components::ComponentUpdate, Device};
+use crate::{api::*, components::ComponentUpdate, consts::*, Device};
 use protobuf::{Message, ProtobufEnum};
 
 // from ESPHome
@@ -104,10 +104,20 @@ impl EspHomeApiClient {
                 }
 
                 ComponentUpdate::LightResponse(msg) => {
-                    send_packet(&mut self.stream, 24, msg.as_ref()).await?;
+                    send_packet(
+                        &mut self.stream,
+                        MessageTypes::LightStateResponse,
+                        msg.as_ref(),
+                    )
+                    .await?;
                 }
                 ComponentUpdate::SensorResponse(msg) => {
-                    send_packet(&mut self.stream, 25, msg.as_ref()).await?;
+                    send_packet(
+                        &mut self.stream,
+                        MessageTypes::SensorStateResponse,
+                        msg.as_ref(),
+                    )
+                    .await?;
                 }
                 ComponentUpdate::Log(msg) => {
                     // DO NOT LOG ANYTHING IN HERE
@@ -115,7 +125,12 @@ impl EspHomeApiClient {
 
                     // only send when requested
                     if msg.level.value() <= self.log.value() {
-                        send_packet(&mut self.stream, 29, msg.as_ref()).await?;
+                        send_packet(
+                            &mut self.stream,
+                            MessageTypes::SubscribeLogsResponse,
+                            msg.as_ref(),
+                        )
+                        .await?;
                     }
                 }
             }
@@ -154,7 +169,7 @@ impl EspHomeApiClient {
                 expect_empty!(msg, "DisconnectRequest");
 
                 let resp = DisconnectResponse::new();
-                send_packet(&mut self.stream, 5, &resp).await?;
+                send_packet(&mut self.stream, MessageTypes::DisconnectResponse, &resp).await?;
                 return Ok(());
             }
             6 => {
@@ -170,7 +185,7 @@ impl EspHomeApiClient {
                 expect_empty!(msg, "PingRequest");
 
                 let resp = PingResponse::new();
-                send_packet(&mut self.stream, 8, &resp).await?;
+                send_packet(&mut self.stream, MessageTypes::PingResponse, &resp).await?;
                 return Ok(());
             }
             _ => {}
@@ -201,7 +216,7 @@ impl EspHomeApiClient {
                 resp.set_api_version_minor(API_MIN);
                 resp.set_name(self.device.name.to_owned());
 
-                send_packet(&mut self.stream, 2, &resp).await?;
+                send_packet(&mut self.stream, MessageTypes::HelloResponse, &resp).await?;
 
                 self.state = ConnectionState::Helloed;
             }
@@ -220,7 +235,7 @@ impl EspHomeApiClient {
                 let mut resp = ConnectResponse::new();
                 resp.set_invalid_password(!valid_login);
 
-                send_packet(&mut self.stream, 4, &resp).await?;
+                send_packet(&mut self.stream, MessageTypes::ConnectResponse, &resp).await?;
 
                 info!("connected");
                 self.state = ConnectionState::Connected;
@@ -246,7 +261,7 @@ impl EspHomeApiClient {
 
                 resp.set_uses_password(!self.device.password.is_empty());
 
-                send_packet(&mut self.stream, 10, &resp).await?;
+                send_packet(&mut self.stream, MessageTypes::DeviceInfoResponse, &resp).await?;
             }
             11 => {
                 // ListEntitiesRequest
@@ -260,7 +275,12 @@ impl EspHomeApiClient {
                 // The End
                 let resp = ListEntitiesDoneResponse::new();
 
-                send_packet(&mut self.stream, 19, &resp).await?;
+                send_packet(
+                    &mut self.stream,
+                    MessageTypes::ListEntitiesDoneResponse,
+                    &resp,
+                )
+                .await?;
             }
             20 => {
                 // SubscribeStatesRequest
@@ -416,7 +436,7 @@ async fn read_packet(stream: &mut smol::Async<std::net::TcpStream>) -> Result<(u
 
 async fn send_packet(
     stream: &mut smol::Async<std::net::TcpStream>,
-    ty: u32,
+    ty: MessageTypes,
     msg: &dyn Message,
 ) -> Result<()> {
     trace!("sending");
@@ -424,7 +444,7 @@ async fn send_packet(
 
     let mut packet = vec![0 as u8];
     packet.append(&mut to_varuint(len));
-    packet.append(&mut to_varuint(ty));
+    packet.append(&mut to_varuint(ty as u32));
     packet.append(&mut msg.write_to_bytes()?);
 
     stream.write_all(&packet).await?;

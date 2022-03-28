@@ -10,8 +10,7 @@ use embedded_ccs811::{mode::App, prelude::*, Ccs811Awake};
 use crate::{
     api::{ListEntitiesSensorResponse, SensorStateResponse},
     components::{Component, ComponentUpdate},
-    consts::LIST_ENTITIES_SENSOR_RESPONSE,
-    // utils::EspHomeApiMsg,
+    consts::MessageTypes,
     utils::*,
 };
 
@@ -71,8 +70,8 @@ impl<E, I2C> Component for CompCcs811<I2C>
 where
     I2C: Read<Error = E> + Write<Error = E> + WriteRead<Error = E>,
 {
-    fn get_description(&self) -> Vec<(u32, Box<dyn Message>)> {
-        let mut resps: Vec<(u32, Box<dyn Message>)> = vec![];
+    fn get_description(&self) -> Vec<(MessageTypes, Box<dyn Message>)> {
+        let mut resps: Vec<(MessageTypes, Box<dyn Message>)> = vec![];
 
         // eCO2
         let name = String::from(NAME) + " eCO2";
@@ -84,7 +83,7 @@ where
         resp.set_unique_id(name_to_unique(&name, "ccs811"));
         resp.set_unit_of_measurement(String::from("ppm"));
 
-        resps.push((LIST_ENTITIES_SENSOR_RESPONSE, Box::new(resp)));
+        resps.push((MessageTypes::ListEntitiesSensorResponse, Box::new(resp)));
 
         // etvoc
         let name = String::from(NAME) + " Total Volatile Organic Compound";
@@ -96,7 +95,7 @@ where
         resp.set_unique_id(name_to_unique(&name, "ccs811"));
         resp.set_unit_of_measurement(String::from("ppb"));
 
-        resps.push((LIST_ENTITIES_SENSOR_RESPONSE, Box::new(resp)));
+        resps.push((MessageTypes::ListEntitiesSensorResponse, Box::new(resp)));
 
         resps
     }

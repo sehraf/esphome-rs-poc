@@ -11,8 +11,7 @@ use ::bme280::BME280;
 use crate::{
     api::{ListEntitiesSensorResponse, SensorStateResponse},
     components::{Component, ComponentUpdate},
-    consts::LIST_ENTITIES_SENSOR_RESPONSE,
-    // utils::EspHomeApiMsg,
+    consts::MessageTypes,
     utils::*,
 };
 
@@ -77,8 +76,8 @@ where
     I2C: Read<Error = E> + Write<Error = E> + WriteRead<Error = E>,
     D: DelayMs<u8>,
 {
-    fn get_description(&self) -> Vec<(u32, Box<dyn Message>)> {
-        let mut resps: Vec<(u32, Box<dyn Message>)> = vec![];
+    fn get_description(&self) -> Vec<(MessageTypes, Box<dyn Message>)> {
+        let mut resps: Vec<(MessageTypes, Box<dyn Message>)> = vec![];
 
         // Temperatur
         let name = String::from(NAME) + " Temperatur";
@@ -90,7 +89,7 @@ where
         resp.set_unique_id(name_to_unique(&name, "bme280"));
         resp.set_unit_of_measurement(String::from("°C"));
 
-        resps.push((LIST_ENTITIES_SENSOR_RESPONSE, Box::new(resp)));
+        resps.push((MessageTypes::ListEntitiesSensorResponse, Box::new(resp)));
 
         // Humidity
         let name = String::from(NAME) + " Humidity";
@@ -102,8 +101,7 @@ where
         resp.set_unique_id(name_to_unique(&name, "bme280"));
         resp.set_unit_of_measurement(String::from("%"));
 
-        resps.push((LIST_ENTITIES_SENSOR_RESPONSE, Box::new(resp)));
-
+        resps.push((MessageTypes::ListEntitiesSensorResponse, Box::new(resp)));
 
         resps
     }

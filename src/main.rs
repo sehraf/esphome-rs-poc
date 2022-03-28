@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use anyhow::*;
 use async_net::Ipv4Addr;
+use consts::MessageTypes;
 // use esp_idf_svc::log::EspLogger;
 use log::*;
 
@@ -58,7 +59,7 @@ pub struct Device {
 
     pub password: String,
 
-    pub component_description: Vec<(u32, Box<dyn Message>)>,
+    pub component_description: Vec<(MessageTypes, Box<dyn Message>)>,
 }
 
 fn main() -> Result<()> {

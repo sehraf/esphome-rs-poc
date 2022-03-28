@@ -1,15 +1,7 @@
 use async_channel::Sender;
 use log::{Level, LevelFilter, Log, Metadata, Record};
 
-use crate::api::*;
-
-#[allow(unused_imports)]
-use crate::{
-    api::{ColorMode, LightStateResponse, ListEntitiesLightResponse},
-    components::{BaseComponent, Component, ComponentUpdate},
-    consts::LIST_ENTITIES_LIGHT_RESPONSE,
-    utils::{light_color::LightColor, *},
-};
+use crate::{api::*, components::ComponentUpdate};
 
 static mut LOGGER: EspHomeLogger = EspHomeLogger { send: None };
 
