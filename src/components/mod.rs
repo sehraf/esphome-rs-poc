@@ -68,7 +68,7 @@ impl BaseComponent {
 pub trait Component {
     fn handle_update(&mut self, msg: &ComponentUpdate) -> Vec<ComponentUpdate>;
 
-    fn get_description(&self) -> Vec<(MessageTypes, Box<dyn Message>)>;
+    fn get_description(&self) -> Vec<(MessageTypes, Arc<Box<dyn Message>>)>;
 }
 
 #[derive(Debug, Clone)]
@@ -86,10 +86,10 @@ pub enum ComponentUpdate {
 
     /// Component related values
     LightRequest(Box<LightCommandRequest>),
-    LightResponse(Box<LightStateResponse>),
 
-    SensorResponse(Box<SensorStateResponse>),
+    Response((MessageTypes, Arc<Box<dyn Message>>)),
 
+    /// Value to log (send to client)
     Log(Box<SubscribeLogsResponse>),
 }
 
@@ -210,8 +210,7 @@ impl ComponentManager {
         #[cfg(feature = "has_bme280")]
         {
             // initialize the BME280 using the primary I2C address 0x76
-            let mut bme280 =
-                ::bme280::BME280::new_primary(i2c_bus.clone(), esp_idf_hal::delay::Ets);
+            let mut bme280 = ::bme280::BME280::new_primary(i2c_bus, esp_idf_hal::delay::Ets);
             match bme280.init() {
                 Ok(()) => {
                     info!("BME280 initialized");
@@ -219,7 +218,7 @@ impl ComponentManager {
                     match bme280.measure() {
                         Ok(mes) => {
                             info!("measured {:.1}°C", mes.temperature);
-                            info!("measured {:.0}hPa", mes.pressure);
+                            info!("measured {:.0}hPa", mes.pressure / 100.);
                             info!("measured {:.2}%", mes.humidity);
 
                             let bme280 = bme280::Bme280::new(bme280);
@@ -345,7 +344,7 @@ impl ComponentManager {
         resp
     }
 
-    pub fn get_descriptions(&mut self) -> Vec<(MessageTypes, Box<dyn Message>)> {
+    pub fn get_descriptions(&mut self) -> Vec<(MessageTypes, Arc<Box<dyn Message>>)> {
         let mut ret = vec![];
 
         for comp in &self.components {

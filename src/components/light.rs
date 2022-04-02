@@ -1,8 +1,10 @@
+use std::sync::Arc;
+
 use embedded_hal::{digital::v2::OutputPin, PwmPin};
 use esp_idf_sys::EspError;
 
 use crate::{
-    api::{ColorMode, LightStateResponse, ListEntitiesLightResponse},
+    api::{ColorMode, LightCommandRequest, LightStateResponse, ListEntitiesLightResponse},
     components::{BaseComponent, Component, ComponentUpdate},
     consts::MessageTypes,
     utils::{light_color::LightColor, *},
@@ -78,7 +80,7 @@ impl Light {
         self.base.get_object_id_hash()
     }
 
-    fn as_response(&self) -> Box<LightStateResponse> {
+    fn as_response(&self) -> Vec<ComponentUpdate> {
         let mut resp = LightStateResponse::new();
         resp.set_key(self.get_key());
         resp.set_state(self.state);
@@ -95,7 +97,75 @@ impl Light {
                 resp.set_blue(color.get_blue());
             }
         }
-        Box::new(resp)
+        vec![ComponentUpdate::Response((
+            MessageTypes::LightStateResponse,
+            Arc::new(Box::new(resp)),
+        ))]
+    }
+
+    fn update_state(&mut self, req: &Box<LightCommandRequest>) {
+        // update state
+        if req.get_has_state() {
+            self.state = req.get_state();
+        }
+
+        // brightness
+        if req.get_has_brightness() {
+            match &mut self.platform {
+                LightPlatform::Binary { .. } => unreachable!("light has no brightness"),
+                LightPlatform::Monochromatic { brightness, .. }
+                | LightPlatform::RGB { brightness, .. } => *brightness = req.get_brightness(),
+            }
+        }
+
+        // update colors
+        if req.get_has_rgb() {
+            match &mut self.platform {
+                LightPlatform::Binary { .. } | LightPlatform::Monochromatic { .. } => {
+                    unreachable!("light has no color")
+                }
+                LightPlatform::RGB { color, .. } => {
+                    color.set_red(req.get_red());
+                    color.set_green(req.get_green());
+                    color.set_blue(req.get_blue());
+                }
+            }
+        }
+
+        // set new values
+        match &mut self.platform {
+            LightPlatform::Binary { pin } => {
+                if self.state {
+                    pin.set_high().unwrap();
+                } else {
+                    pin.set_low().unwrap();
+                }
+            }
+            LightPlatform::Monochromatic { pin, brightness } => {
+                if self.state {
+                    set_pwm(pin, *brightness);
+                } else {
+                    set_pwm(pin, 0.);
+                }
+            }
+            LightPlatform::RGB {
+                pin_r,
+                pin_g,
+                pin_b,
+                brightness,
+                color,
+            } => {
+                let color = if self.state {
+                    color.scale(*brightness)
+                } else {
+                    (0., 0., 0.).into()
+                };
+
+                set_pwm(pin_r, color.get_red());
+                set_pwm(pin_g, color.get_green());
+                set_pwm(pin_b, color.get_blue());
+            }
+        }
     }
 }
 
@@ -106,7 +176,7 @@ fn set_pwm(pin: &mut Box<dyn PwmPin<Duty = u32>>, brightness: f32) {
 }
 
 impl Component for Light {
-    fn get_description(&self) -> Vec<(MessageTypes, Box<dyn protobuf::Message>)> {
+    fn get_description(&self) -> Vec<(MessageTypes, Arc<Box<dyn protobuf::Message>>)> {
         let mut resp = ListEntitiesLightResponse::new();
         resp.set_disabled_by_default(false);
         resp.set_key(self.get_key());
@@ -128,82 +198,20 @@ impl Component for Light {
 
         vec![(
             MessageTypes::ListEntitiesLightResponse,
-            Box::new(resp) as Box<dyn protobuf::Message>,
+            Arc::new(Box::new(resp)),
         )]
     }
 
     fn handle_update(&mut self, msg: &ComponentUpdate) -> Vec<ComponentUpdate> {
         match msg {
             ComponentUpdate::Request(key) if key.is_none() || key == &Some(self.get_key()) => {
-                return vec![ComponentUpdate::LightResponse(self.as_response())];
+                return self.as_response();
             }
             ComponentUpdate::LightRequest(req) if req.get_key() == self.get_key() => {
-                // update state
-                if req.get_has_state() {
-                    self.state = req.get_state();
-                }
+                self.update_state(req);
 
-                // brightness
-                if req.get_has_brightness() {
-                    match &mut self.platform {
-                        LightPlatform::Binary { .. } => unreachable!("light has no brightness"),
-                        LightPlatform::Monochromatic { brightness, .. }
-                        | LightPlatform::RGB { brightness, .. } => {
-                            *brightness = req.get_brightness()
-                        }
-                    }
-                }
-
-                // update colors
-                if req.get_has_rgb() {
-                    match &mut self.platform {
-                        LightPlatform::Binary { .. } | LightPlatform::Monochromatic { .. } => {
-                            unreachable!("light has no color")
-                        }
-                        LightPlatform::RGB { color, .. } => {
-                            color.set_red(req.get_red());
-                            color.set_green(req.get_green());
-                            color.set_blue(req.get_blue());
-                        }
-                    }
-                }
-
-                // set new values
-                match &mut self.platform {
-                    LightPlatform::Binary { pin } => {
-                        if self.state {
-                            pin.set_high().unwrap();
-                        } else {
-                            pin.set_low().unwrap();
-                        }
-                    }
-                    LightPlatform::Monochromatic { pin, brightness } => {
-                        if self.state {
-                            set_pwm(pin, *brightness);
-                        } else {
-                            set_pwm(pin, 0.);
-                        }
-                    }
-                    LightPlatform::RGB {
-                        pin_r,
-                        pin_g,
-                        pin_b,
-                        brightness,
-                        color,
-                    } => {
-                        let color = if self.state {
-                            color.scale(*brightness)
-                        } else {
-                            (0., 0., 0.).into()
-                        };
-
-                        set_pwm(pin_r, color.get_red());
-                        set_pwm(pin_g, color.get_green());
-                        set_pwm(pin_b, color.get_blue());
-                    }
-                }
-
-                return vec![ComponentUpdate::LightResponse(self.as_response())];
+                // return vec![ComponentUpdate::LightResponse(self.as_response())];
+                return self.as_response();
             }
             _ => {}
         }

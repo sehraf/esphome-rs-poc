@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter, Result};
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MessageTypes {
-    Unkown = 0,
+    Unkown = 0, // only used internally
     HelloRequest = 1,
     HelloResponse,
     ConnectRequest,

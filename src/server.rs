@@ -69,7 +69,7 @@ impl EspHomeApiServer {
         info!("setting up ...");
 
         // server communication channels
-        let (client_send, client_recv) = async_channel::bounded(10);
+        let (client_send, client_recv) = async_channel::unbounded();
 
         smol::spawn(Listener::run(client_send.clone())).detach();
         info!("listener running");
@@ -105,17 +105,9 @@ impl EspHomeApiServer {
                         // unpack arc
                         let socket = Arc::<Async<std::net::TcpStream>>::try_unwrap(socket)
                             .expect("failed to get socket");
-                        smol::spawn(async {
-                            Box::new(EspHomeApiClient::new(
-                                socket,
-                                device,
-                                client_recv,
-                                client_send,
-                            ))
-                            .run()
-                            .await;
-                        })
-                        .detach();
+                        EspHomeApiClient::new(socket, device, client_recv, client_send)
+                            .await
+                            .expect("failed to spawn client");
 
                         self.clients.push(server_send);
                     }
@@ -129,6 +121,7 @@ impl EspHomeApiServer {
                 Err(err) => warn!("{}", &err),
             }
             // for now, send to all
+            // info!("{:?}", &msg_for_clients);
             for resp in &msg_for_clients {
                 self.clients.retain(|client| {
                     let res = smol::block_on(async { client.send(resp.to_owned()).await });

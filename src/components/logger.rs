@@ -130,6 +130,12 @@ impl Log for EspHomeLogger {
                     send.send(ComponentUpdate::Log(Box::new(resp)))
                         .await
                         .expect("failed to send");
+                    // send.send(ComponentUpdate::Generic((
+                    //     MessageTypes::SubscribeLogsResponse,
+                    //     Arc::new(Box::new(resp)),
+                    // )))
+                    // .await
+                    // .expect("failed to send");
                 })
             }
 

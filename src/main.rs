@@ -59,7 +59,7 @@ pub struct Device {
 
     pub password: String,
 
-    pub component_description: Vec<(MessageTypes, Box<dyn Message>)>,
+    pub component_description: Vec<(MessageTypes, Arc<Box<dyn Message>>)>,
 }
 
 fn main() -> Result<()> {
@@ -91,7 +91,17 @@ fn main() -> Result<()> {
         netif_stack.clone(),
         sys_loop_stack.clone(),
         default_nvs.clone(),
-    )?;
+    );
+    if let Err(err) = wifi {
+        warn!("WiFi error: {err}, rebooting in 3 seconds");
+        std::thread::sleep(Duration::from_secs(3));
+
+        unsafe {
+            esp_idf_sys::esp_restart();
+        }
+        unreachable!()
+    }
+    let wifi = wifi.unwrap();
 
     // WiFi should be up by now, get IP addr
     let ip = {

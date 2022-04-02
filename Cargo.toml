@@ -1,6 +1,6 @@
 [package]
 name = "esphome-rs-poc"
-version = "0.0.6"
+version = "0.0.7"
 authors = ["sehraf"]
 edition = "2021"
 categories = ["embedded", "hardware-support", "network-programming"]
@@ -24,7 +24,7 @@ debug = true
 opt-level = "z"
 
 [features]
-default = ["native", "experimental", "mdns"]
+default = ["native", "experimental", "mdns", "has_bme280"]
 
 # Enable this feature for the build to use ESP-IDF native tooling instead of PlatformIO under the hood
 native = ["esp-idf-sys/native"]
@@ -55,7 +55,6 @@ convert_case = "0.4"
 protobuf = "2"
 
 embedded-ccs811 = { version = "0.2.0", optional = true }
-# bme280 = { path = "../bme280-rs", optional = true }
 bme280 = { version = "0.2.1", optional = true }
 
 # only for async feature
@@ -64,7 +63,7 @@ async-io = "1.6"
 async-net = "1.6"
 async-channel = "1.6"
 futures-lite = "1.12"
-# futures = { version = "^0.3", optional = true } 
+# futures = "0.3"
 
 [build-dependencies]
 embuild = "0.28"

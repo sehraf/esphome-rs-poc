@@ -1,12 +1,17 @@
-use std::time::{Duration, Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
-// use log::*;
+use log::*;
 use protobuf::Message;
 
-use embedded_hal::blocking::delay::DelayMs;
-use embedded_hal::blocking::i2c::{Read, Write, WriteRead};
+use embedded_hal::blocking::{
+    delay::DelayMs,
+    i2c::{Read, Write, WriteRead},
+};
 
-use ::bme280::BME280;
+use bme280::BME280;
 
 use crate::{
     api::{ListEntitiesSensorResponse, SensorStateResponse},
@@ -47,22 +52,35 @@ where
     fn gen_resp(&mut self) -> Vec<ComponentUpdate> {
         match self.bme.measure() {
             Ok(mes) => {
+                trace!("measured {:.1}°C", mes.temperature);
+                trace!("measured {:.0}hPa", mes.pressure / 100.);
+                trace!("measured {:.2}%", mes.humidity);
+
                 let mut resp = vec![];
 
                 let mut temp = SensorStateResponse::new();
                 temp.set_key(self.get_key());
                 temp.set_state(mes.temperature);
-                resp.push(ComponentUpdate::SensorResponse(Box::new(temp)));
+                resp.push(ComponentUpdate::Response((
+                    MessageTypes::SensorStateResponse,
+                    Arc::new(Box::new(temp)),
+                )));
 
                 let mut humi = SensorStateResponse::new();
                 humi.set_key(self.get_key() + 1);
                 humi.set_state(mes.humidity);
-                resp.push(ComponentUpdate::SensorResponse(Box::new(humi)));
+                resp.push(ComponentUpdate::Response((
+                    MessageTypes::SensorStateResponse,
+                    Arc::new(Box::new(humi)),
+                )));
 
                 let mut pres = SensorStateResponse::new();
                 pres.set_key(self.get_key() + 2);
-                pres.set_state(mes.pressure);
-                resp.push(ComponentUpdate::SensorResponse(Box::new(pres)));
+                pres.set_state(mes.pressure / 100.); // mes.pressure is in Pa
+                resp.push(ComponentUpdate::Response((
+                    MessageTypes::SensorStateResponse,
+                    Arc::new(Box::new(pres)),
+                )));
 
                 return resp;
             }
@@ -76,8 +94,8 @@ where
     I2C: Read<Error = E> + Write<Error = E> + WriteRead<Error = E>,
     D: DelayMs<u8>,
 {
-    fn get_description(&self) -> Vec<(MessageTypes, Box<dyn Message>)> {
-        let mut resps: Vec<(MessageTypes, Box<dyn Message>)> = vec![];
+    fn get_description(&self) -> Vec<(MessageTypes, Arc<Box<dyn Message>>)> {
+        let mut resps: Vec<(MessageTypes, Arc<Box<dyn Message>>)> = vec![];
 
         // Temperatur
         let name = String::from(NAME) + " Temperatur";
@@ -88,8 +106,12 @@ where
         resp.set_object_id(name_to_object(&name));
         resp.set_unique_id(name_to_unique(&name, "bme280"));
         resp.set_unit_of_measurement(String::from("°C"));
+        resp.set_accuracy_decimals(1);
 
-        resps.push((MessageTypes::ListEntitiesSensorResponse, Box::new(resp)));
+        resps.push((
+            MessageTypes::ListEntitiesSensorResponse,
+            Arc::new(Box::new(resp)),
+        ));
 
         // Humidity
         let name = String::from(NAME) + " Humidity";
@@ -100,8 +122,28 @@ where
         resp.set_object_id(name_to_object(&name));
         resp.set_unique_id(name_to_unique(&name, "bme280"));
         resp.set_unit_of_measurement(String::from("%"));
+        resp.set_accuracy_decimals(1);
 
-        resps.push((MessageTypes::ListEntitiesSensorResponse, Box::new(resp)));
+        resps.push((
+            MessageTypes::ListEntitiesSensorResponse,
+            Arc::new(Box::new(resp)),
+        ));
+
+        // Preasure
+        let name = String::from(NAME) + " Preasure";
+        let mut resp = ListEntitiesSensorResponse::new();
+        resp.set_disabled_by_default(false);
+        resp.set_key(self.get_key() + 2);
+        resp.set_name(name.to_owned());
+        resp.set_object_id(name_to_object(&name));
+        resp.set_unique_id(name_to_unique(&name, "bme280"));
+        resp.set_unit_of_measurement(String::from("hPa"));
+        resp.set_accuracy_decimals(1);
+
+        resps.push((
+            MessageTypes::ListEntitiesSensorResponse,
+            Arc::new(Box::new(resp)),
+        ));
 
         resps
     }

@@ -1,12 +1,20 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    net::TcpStream,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::{bail, Result};
+use async_channel::{Receiver, Sender};
+use futures_lite::{
+    future,
+    io::{ReadHalf, WriteHalf},
+    AsyncRead, AsyncWrite,
+};
 use log::*;
-
-use smol::io::AsyncWriteExt;
+use protobuf::{Message, ProtobufEnum};
+use smol::io::{split, AsyncWriteExt};
 
 use crate::{api::*, components::ComponentUpdate, consts::*, Device};
-use protobuf::{Message, ProtobufEnum};
 
 // from ESPHome
 const API_MAX: u32 = 1;
@@ -33,7 +41,7 @@ impl ConnectionState {
 
         match self {
             Initalized => {
-                // only exptec HelloRequest (1)
+                // only expect HelloRequest (1)
                 return ty == MessageTypes::HelloRequest;
             }
             Helloed => {
@@ -52,114 +60,111 @@ impl ConnectionState {
 ///
 /// When an api command is received it gets sent to the [[ComponentHandler]].
 /// When a responde from the [[ComponentHandler]] is gets sent to the api client.
-pub struct EspHomeApiClient {
-    state: ConnectionState,
-    stream: smol::Async<std::net::TcpStream>,
-
-    device: Arc<Device>,
-
-    recv: async_channel::Receiver<ComponentUpdate>,
-    send: async_channel::Sender<ComponentUpdate>,
-
-    // Component specific options
-    log: LogLevel,
-}
+pub struct EspHomeApiClient;
 
 impl EspHomeApiClient {
-    pub fn new(
-        stream: smol::Async<std::net::TcpStream>,
+    pub async fn new(
+        stream: smol::Async<TcpStream>,
         device: Arc<Device>,
-        receiver: async_channel::Receiver<ComponentUpdate>,
-        sender: async_channel::Sender<ComponentUpdate>,
-    ) -> EspHomeApiClient {
-        EspHomeApiClient {
-            state: ConnectionState::Initalized,
-            stream,
-            device,
-            recv: receiver,
-            send: sender,
+        receiver: Receiver<ComponentUpdate>,
+        sender: Sender<ComponentUpdate>,
+    ) -> Result<()> {
+        // The idea is to have to halfes:
+        //  1 recevies messages from the net, but does not send anything
+        //  2 receives messages internally and sends to net
+        // There is an internal message queue for things like `PingRequest` that do not need to go through the server
+        let (stream_read, stream_send) = split(stream);
+        let (int_send, int_recv) = async_channel::bounded(10);
+        let logs = Arc::new(Mutex::new(LogLevel::LOG_LEVEL_NONE));
 
-            log: LogLevel::LOG_LEVEL_NONE,
-        }
-    }
-
-    pub async fn handle(&mut self) -> Result<()> {
-        // TODO
-        // We should wait for both async, internal messages and external data.
-        // There is `select!` but futures-lite does not support this.
-
-        // check for pending packages to send
-        while let Ok(msg) = self.recv.try_recv() {
-            // DO NOT LOG ANYTHING IN HERE
-            // It'll create a recursion
-
-            // we expect responses here
-            match msg {
-                ComponentUpdate::Request(..)
-                | ComponentUpdate::Update
-                | ComponentUpdate::LightRequest(..)
-                | ComponentUpdate::Closing
-                | ComponentUpdate::Connection(..) => {
-                    warn!("received unexpected message! This is likely a code bug!");
-                }
-
-                ComponentUpdate::LightResponse(msg) => {
-                    send_packet(
-                        &mut self.stream,
-                        MessageTypes::LightStateResponse,
-                        msg.as_ref(),
-                    )
-                    .await?;
-                }
-                ComponentUpdate::SensorResponse(msg) => {
-                    send_packet(
-                        &mut self.stream,
-                        MessageTypes::SensorStateResponse,
-                        msg.as_ref(),
-                    )
-                    .await?;
-                }
-                ComponentUpdate::Log(msg) => {
-                    // DO NOT LOG ANYTHING IN HERE
-                    // It'll create a recursion
-
-                    // only send when requested
-                    if msg.level.value() <= self.log.value() {
-                        send_packet(
-                            &mut self.stream,
-                            MessageTypes::SubscribeLogsResponse,
-                            msg.as_ref(),
-                        )
-                        .await?;
-                    }
-                }
+        // setup (net) sending half
+        let logs_a = logs.clone();
+        smol::spawn(async {
+            let res = handle_queue(logs_a, receiver, int_recv, stream_send).await;
+            if let Err(err) = res {
+                warn!("Client queue returned: {err}");
             }
-        }
+        })
+        .detach();
 
-        // read available packets
-        let ret = read_packet(&mut self.stream).await;
-        let (ty, msg) = match ret {
-            Ok((0, v)) if v.is_empty() => return Ok(()),
-            Ok((ty, msg)) => (ty.into(), msg),
-            Err(err) => {
-                if let Some(err) = err.downcast_ref::<std::io::Error>() {
-                    // warn!("1 {}", err);
-                    match err.kind() {
-                        std::io::ErrorKind::ConnectionReset => return Ok(()),
-                        std::io::ErrorKind::UnexpectedEof => return Ok(()),
-                        _ => {
-                            warn!("read_packet recieved io error: {}", err);
-                            bail!("read_packet recieved io error: {}", err);
+        // setup (net) receiving part
+        let logs_b = logs.clone();
+        let device_b = device.clone();
+        smol::spawn(async {
+            let res = handle_net(device_b, logs_b, int_send, sender, stream_read).await;
+            if let Err(err) = res {
+                warn!("Client net returned: {err}");
+            }
+        })
+        .detach();
+
+        Ok(())
+    }
+}
+
+async fn handle_queue(
+    log: Arc<Mutex<LogLevel>>,
+    ext_recv: Receiver<ComponentUpdate>,
+    int_recv: Receiver<ComponentUpdate>,
+    mut stream_send: WriteHalf<smol::Async<TcpStream>>,
+) -> Result<()> {
+    loop {
+        // prefer internal queue over network
+        match future::or(int_recv.recv(), ext_recv.recv()).await {
+            Ok(msg) => {
+                match msg {
+                    ComponentUpdate::Request(..)
+                    | ComponentUpdate::Update
+                    | ComponentUpdate::LightRequest(..)
+                    | ComponentUpdate::Closing
+                    | ComponentUpdate::Connection(..) => {
+                        warn!("received unexpected message! This is likely a code bug!");
+                    }
+
+                    ComponentUpdate::Response((ty, msg)) => {
+                        send_packet(&mut stream_send, ty, msg.as_ref().as_ref()).await?;
+                    }
+
+                    ComponentUpdate::Log(msg) => {
+                        // DO NOT LOG ANYTHING IN HERE
+                        // It'll create a recursion
+
+                        // only send when requested
+                        if msg.level.value() <= log.lock().expect("lock poisened!").value() {
+                            send_packet(
+                                &mut stream_send,
+                                MessageTypes::SubscribeLogsResponse,
+                                msg.as_ref(),
+                            )
+                            .await?;
                         }
                     }
                 }
-
-                warn!("2 {}", err);
-                bail!("unhandled error {}", err);
-                // return Ok(());
             }
-        };
-        info!("received type {}", ty);
+            Err(err) => {
+                bail!("received error {err}, closing");
+            }
+        }
+    }
+}
+
+async fn handle_net(
+    device: Arc<Device>,
+    log: Arc<Mutex<LogLevel>>,
+    int_send: Sender<ComponentUpdate>,
+    ext_send: Sender<ComponentUpdate>,
+    mut stream_read: ReadHalf<smol::Async<TcpStream>>,
+) -> Result<()> {
+    let mut state = ConnectionState::Initalized;
+
+    loop {
+        // read available packets
+        let (ty, msg) = read_packet(&mut stream_read).await?;
+        if ty == MessageTypes::Unkown {
+            info!("Recevied shutdown signal");
+            return Ok(());
+        }
+        trace!("received type {}", ty);
 
         // handle special cases independend
         match ty {
@@ -169,7 +174,12 @@ impl EspHomeApiClient {
                 expect_empty!(msg, "DisconnectRequest");
 
                 let resp = DisconnectResponse::new();
-                send_packet(&mut self.stream, MessageTypes::DisconnectResponse, &resp).await?;
+                int_send
+                    .send(ComponentUpdate::Response((
+                        MessageTypes::DisconnectResponse,
+                        Arc::new(Box::new(resp)),
+                    )))
+                    .await?;
                 return Ok(());
             }
             MessageTypes::DisconnectResponse => {
@@ -185,19 +195,21 @@ impl EspHomeApiClient {
                 expect_empty!(msg, "PingRequest");
 
                 let resp = PingResponse::new();
-                send_packet(&mut self.stream, MessageTypes::PingResponse, &resp).await?;
-                return Ok(());
+                int_send
+                    .send(ComponentUpdate::Response((
+                        MessageTypes::PingResponse,
+                        Arc::new(Box::new(resp)),
+                    )))
+                    .await?;
+                continue;
             }
             MessageTypes::PingResponse => {}
             _ => {}
         }
 
         // check if type is allowed
-        if !self.state.is_call_legal(ty) {
-            warn!(
-                "received illegal call! type: {}, state {:?}",
-                ty, self.state
-            );
+        if !state.is_call_legal(ty) {
+            warn!("received illegal call! type: {ty}, state {state:?}");
             return Ok(());
         }
 
@@ -212,14 +224,19 @@ impl EspHomeApiClient {
                 );
 
                 let mut resp = HelloResponse::new();
-                resp.set_server_info(self.device.project_name.to_owned());
+                resp.set_server_info(device.project_name.to_owned());
                 resp.set_api_version_major(API_MAX);
                 resp.set_api_version_minor(API_MIN);
-                resp.set_name(self.device.name.to_owned());
+                resp.set_name(device.name.to_owned());
 
-                send_packet(&mut self.stream, MessageTypes::HelloResponse, &resp).await?;
+                int_send
+                    .send(ComponentUpdate::Response((
+                        MessageTypes::HelloResponse,
+                        Arc::new(Box::new(resp)),
+                    )))
+                    .await?;
 
-                self.state = ConnectionState::Helloed;
+                state = ConnectionState::Helloed;
             }
             MessageTypes::ConnectRequest => {
                 // ConnectRequest
@@ -228,18 +245,33 @@ impl EspHomeApiClient {
                 let req = ConnectRequest::parse_from_bytes(&msg)?;
 
                 let valid_login =
-                    self.device.password.is_empty() || req.get_password() == self.device.password;
+                    device.password.is_empty() || req.get_password() == device.password;
+
                 if !valid_login {
-                    warn!("invalid login attempt!");
+                    // Shall we print it? Or better not?
+                    // (we don't support encryption, so anybody in the network can read it anyway)
+                    warn!("invalid login attempt: {}", req.get_password());
+
+                    // don't bail yet!
                 }
 
                 let mut resp = ConnectResponse::new();
                 resp.set_invalid_password(!valid_login);
 
-                send_packet(&mut self.stream, MessageTypes::ConnectResponse, &resp).await?;
+                int_send
+                    .send(ComponentUpdate::Response((
+                        MessageTypes::ConnectResponse,
+                        Arc::new(Box::new(resp)),
+                    )))
+                    .await?;
+
+                if !valid_login {
+                    // time to bail
+                    bail!("invalid login attempt!");
+                }
 
                 info!("connected");
-                self.state = ConnectionState::Connected;
+                state = ConnectionState::Connected;
             }
             MessageTypes::DisconnectRequest
             | MessageTypes::DisconnectResponse
@@ -256,34 +288,41 @@ impl EspHomeApiClient {
                 resp.set_esphome_version(String::from("rs v0"));
                 resp.set_has_deep_sleep(false);
 
-                resp.set_mac_address(self.device.mac.to_owned());
-                resp.set_model(self.device.model.to_owned());
-                resp.set_name(self.device.name.to_owned());
-                resp.set_project_name(self.device.project_name.to_owned());
-                resp.set_project_version(self.device.project_version.to_owned());
+                resp.set_mac_address(device.mac.to_owned());
+                resp.set_model(device.model.to_owned());
+                resp.set_name(device.name.to_owned());
+                resp.set_project_name(device.project_name.to_owned());
+                resp.set_project_version(device.project_version.to_owned());
 
-                resp.set_uses_password(!self.device.password.is_empty());
+                resp.set_uses_password(!device.password.is_empty());
 
-                send_packet(&mut self.stream, MessageTypes::DeviceInfoResponse, &resp).await?;
+                int_send
+                    .send(ComponentUpdate::Response((
+                        MessageTypes::DeviceInfoResponse,
+                        Arc::new(Box::new(resp)),
+                    )))
+                    .await?;
             }
             MessageTypes::ListEntitiesRequest => {
                 // ListEntitiesRequest
                 info!("ListEntitiesRequest");
                 expect_empty!(msg, "ListEntitiesRequest");
 
-                for comp in &self.device.component_description {
-                    send_packet(&mut self.stream, comp.0, comp.1.as_ref()).await?;
+                // int_send.send(ComponentUpdate::ListEntitiesRequest).await?;
+                for comp in &device.component_description {
+                    // send_packet(&mut stream_send, comp.0, comp.1.as_ref()).await?;
+                    int_send
+                        .send(ComponentUpdate::Response((comp.0, comp.1.to_owned())))
+                        .await?;
                 }
 
-                // The End
                 let resp = ListEntitiesDoneResponse::new();
-
-                send_packet(
-                    &mut self.stream,
-                    MessageTypes::ListEntitiesDoneResponse,
-                    &resp,
-                )
-                .await?;
+                int_send
+                    .send(ComponentUpdate::Response((
+                        MessageTypes::ListEntitiesDoneResponse,
+                        Arc::new(Box::new(resp)),
+                    )))
+                    .await?;
             }
             MessageTypes::SubscribeStatesRequest => {
                 // SubscribeStatesRequest
@@ -291,8 +330,7 @@ impl EspHomeApiClient {
                 expect_empty!(msg, "SubscribeStatesRequest");
 
                 // request state from all
-                #[cfg(not(feature = "async"))]
-                self.send
+                ext_send
                     .send(ComponentUpdate::Request(None))
                     .await
                     .expect("failed to send");
@@ -303,7 +341,7 @@ impl EspHomeApiClient {
 
                 let msg = SubscribeLogsRequest::parse_from_bytes(&msg)?;
                 // update log state for client
-                self.log = msg.level;
+                *log.lock().expect("lock poisened!") = msg.level;
             }
             MessageTypes::LightCommandRequest => {
                 // LightCommandRequest
@@ -312,7 +350,7 @@ impl EspHomeApiClient {
                 let msg = LightCommandRequest::parse_from_bytes(&msg)?;
                 let msg = ComponentUpdate::LightRequest(Box::new(msg));
 
-                self.send.send(msg).await.expect("failed to send");
+                ext_send.send(msg).await.expect("failed to send");
             }
             MessageTypes::SubscribeHomeassistantServicesRequest => {
                 // SubscribeHomeassistantServicesRequest
@@ -331,21 +369,6 @@ impl EspHomeApiClient {
                 // break;
             }
         }
-        Ok(())
-    }
-
-    pub async fn run(&mut self) {
-        while self.handle().await.is_ok() {
-            // TODO
-            // This is a hack to give the rest of the system some time to process any generated messages.
-            // We wait for the answers to arive, before entering `handle()` again.
-            // Also see comment in `handle()`.
-            std::thread::sleep(Duration::from_millis(100));
-        }
-        self.send
-            .send(ComponentUpdate::Closing)
-            .await
-            .expect("failed to send");
     }
 }
 
@@ -384,7 +407,32 @@ pub fn from_varuint(buf: &Vec<u8>) -> u32 {
     0
 }
 
-async fn read_packet(stream: &mut smol::Async<std::net::TcpStream>) -> Result<(u32, Vec<u8>)> {
+async fn read_packet<T: AsyncRead + Unpin>(stream: &mut T) -> Result<(MessageTypes, Vec<u8>)> {
+    match read_packet_inner(stream).await {
+        Ok((0, msg)) => {
+            assert!(msg.is_empty());
+            return Ok((MessageTypes::Unkown, vec![]));
+        }
+        Ok((ty, msg)) => Ok((ty.into(), msg)),
+        Err(err) => {
+            if let Some(err) = err.downcast_ref::<std::io::Error>() {
+                match err.kind() {
+                    std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::UnexpectedEof => {
+                        return Ok((MessageTypes::Unkown, vec![]));
+                    }
+                    _ => {
+                        warn!("read_packet recieved io error: {}", err);
+                        bail!("read_packet recieved io error: {}", err);
+                    }
+                }
+            }
+
+            bail!("unhandled error {}", err);
+        }
+    }
+}
+
+async fn read_packet_inner<T: AsyncRead + Unpin>(stream: &mut T) -> Result<(u32, Vec<u8>)> {
     use smol::io::AsyncReadExt;
 
     let mut buf_single: [u8; 1] = [!0];
@@ -437,11 +485,10 @@ async fn read_packet(stream: &mut smol::Async<std::net::TcpStream>) -> Result<(u
     Ok((ty, msg))
 }
 
-async fn send_packet(
-    stream: &mut smol::Async<std::net::TcpStream>,
-    ty: MessageTypes,
-    msg: &dyn Message,
-) -> Result<()> {
+async fn send_packet<T>(stream: &mut T, ty: MessageTypes, msg: &dyn Message) -> Result<()>
+where
+    T: AsyncWrite + Unpin,
+{
     trace!("sending {}, {:?}", ty as u32, msg);
     let len = msg.compute_size();
 
