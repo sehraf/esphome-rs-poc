@@ -20,13 +20,13 @@ The following light [components](https://esphome.io/#light-components) are imple
 - [RGB](https://esphome.io/components/light/rgb.html)
 
 ### Sensor
-I've hocked up a BME280 via I2C but the corresponsing crate is broken. So, while the code works it is useless.
+BME280 via I²C works, supporting temperature, humidity and preasure. To enable use feature `"has_bme280"`.
 
 ### mDNS
 Name is advertised as `esphome-rs-poc.local`
 
 ### Log
-Stubbed, nothing more.
+Colors result in a stack overflow, beside that, it is working.
 
 ## How to build
 `cargo build --features=native`
